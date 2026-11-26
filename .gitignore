@@ -7,3 +7,6 @@ index.db.lock
 *.db-wal
 *.db-shm
 .env
+
+# fastembed model cache (pinned to ~/.cache/remember-mcp at runtime)
+.fastembed_cache/
