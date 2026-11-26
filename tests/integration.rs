@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{do_search, sync_fixture, FakeEmbedder, Fixture};
+use common::{do_search, sync_fixture, try_sync_fixture, FakeEmbedder, Fixture};
 use remember_mcp::index::Index;
 use remember_mcp::search::SearchParams;
 use remember_mcp::sources::build_adapters;
@@ -423,4 +423,102 @@ fn full_reindex_rebuilds_everything() {
     // results identical after a full rebuild
     let hits = do_search(&f, "docker permission denied", Some(&emb));
     assert_eq!(hits.hits[0].session_id, "ses_docker_fix");
+}
+
+#[test]
+fn config_change_triggers_rebuild() {
+    let f = fx();
+    let emb = FakeEmbedder::new(64);
+    let s1 = sync_fixture(&f, Some(&emb), false);
+    assert!(s1.sessions_indexed > 0);
+
+    // chunker_version mismatch → drop + rebuild
+    {
+        let conn = rusqlite::Connection::open(f.index()).unwrap();
+        conn.execute(
+            "UPDATE sync_state SET value = '0' WHERE key = 'chunker_version'",
+            [],
+        )
+        .unwrap();
+    }
+    let s2 = sync_fixture(&f, Some(&emb), false);
+    assert_eq!(
+        s2.sessions_indexed, s1.sessions_indexed,
+        "chunker_version change must rebuild every session"
+    );
+
+    // embed dims mismatch → drop + recreate vec table + rebuild
+    let emb32 = FakeEmbedder::new(32);
+    let s3 = sync_fixture(&f, Some(&emb32), false);
+    assert_eq!(
+        s3.sessions_indexed, s1.sessions_indexed,
+        "embed_dim change must rebuild every session"
+    );
+    // vec table now declares float[32]
+    let conn = rusqlite::Connection::open(f.index()).unwrap();
+    let sql: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE name='chunks_vec'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(sql.contains("float[32]"), "vec table recreated: {sql}");
+
+    // embed model mismatch → drop + rebuild
+    let emb_other = FakeEmbedder::with_model(32, "fake-other");
+    let s4 = sync_fixture(&f, Some(&emb_other), false);
+    assert_eq!(
+        s4.sessions_indexed, s1.sessions_indexed,
+        "embed_model change must rebuild every session"
+    );
+}
+
+#[test]
+fn second_process_sync_reports_busy() {
+    let f = fx();
+    remember_mcp::register_sqlite_vec();
+
+    // simulate another server instance holding the cross-process lock
+    let lock_path = f.index().with_extension("db.lock");
+    let holder = std::fs::File::create(&lock_path).unwrap();
+    holder.try_lock().expect("test takes the lock");
+
+    let outcome = try_sync_fixture(&f, None, false);
+    assert!(
+        matches!(outcome, remember_mcp::index::SyncOutcome::Busy),
+        "sync must report Busy while another holder has the lock"
+    );
+
+    drop(holder); // release
+    let s = sync_fixture(&f, None, false);
+    assert!(s.sessions_indexed > 0, "sync proceeds after the lock frees");
+}
+
+#[cfg(unix)]
+#[test]
+fn index_db_has_0600_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+    let f = fx();
+    remember_mcp::register_sqlite_vec();
+    let _ = Index::open(&f.index()).unwrap();
+    let mode = std::fs::metadata(f.index()).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600, "index.db must be owner-only");
+}
+
+#[test]
+fn config_reads_env_with_spec_defaults() {
+    std::env::set_var("EXTRA_REDACT_REGEX", "alpha-\\d+\nbeta-\\d+");
+    let cfg = remember_mcp::config::Config::from_env();
+    assert_eq!(
+        cfg.extra_redact,
+        vec!["alpha-\\d+".to_string(), "beta-\\d+".to_string()]
+    );
+    assert_eq!(cfg.embed_max_len, 192, "spec-adjacent default");
+    assert_eq!(
+        cfg.sync_ttl,
+        std::time::Duration::from_secs(30),
+        "spec default"
+    );
+    std::env::remove_var("EXTRA_REDACT_REGEX");
 }

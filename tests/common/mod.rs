@@ -501,12 +501,12 @@ fn write_json_tree(storage: &Path) {
 // Shared sync/search helpers for integration tests
 // ---------------------------------------------------------------------------
 
-pub fn sync_fixture(
+pub fn try_sync_fixture(
     fx: &Fixture,
     embed: Option<&dyn remember_mcp::embed::Embedder>,
     full: bool,
-) -> remember_mcp::index::SyncSummary {
-    use remember_mcp::index::{Index, SyncOptions, SyncOutcome, SyncProgress};
+) -> remember_mcp::index::SyncOutcome {
+    use remember_mcp::index::{Index, SyncOptions, SyncProgress};
     use remember_mcp::redact::Redactor;
     use remember_mcp::sources::build_adapters;
 
@@ -515,7 +515,7 @@ pub fn sync_fixture(
     let adapters = build_adapters(&fx.db(), &fx.storage());
     let progress = SyncProgress::default();
     let redactor = Redactor::default();
-    match index
+    index
         .sync(&SyncOptions {
             adapters: &adapters,
             embedder: embed,
@@ -525,7 +525,15 @@ pub fn sync_fixture(
             progress: &progress,
         })
         .expect("sync")
-    {
+}
+
+pub fn sync_fixture(
+    fx: &Fixture,
+    embed: Option<&dyn remember_mcp::embed::Embedder>,
+    full: bool,
+) -> remember_mcp::index::SyncSummary {
+    use remember_mcp::index::SyncOutcome;
+    match try_sync_fixture(fx, embed, full) {
         SyncOutcome::Done(s) => s,
         SyncOutcome::Busy => panic!("sync lock busy"),
     }
@@ -569,6 +577,13 @@ impl FakeEmbedder {
         Self {
             dims,
             model: "fake-bow".into(),
+        }
+    }
+
+    pub fn with_model(dims: usize, model: &str) -> Self {
+        Self {
+            dims,
+            model: model.into(),
         }
     }
 }

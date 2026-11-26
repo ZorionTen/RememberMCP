@@ -196,11 +196,23 @@ fn every_tool_and_resource_over_stdio() {
     );
 
     // ---- index_status -----------------------------------------------------
-    let st = c.call("index_status", json!({}));
+    // Must answer even while the background sync is still building (spec §16),
+    // then report the built index once the sync finishes.
+    let mut built = None;
+    for _ in 0..60 {
+        let r = c.call("index_status", json!({}));
+        let sc = &r["structuredContent"];
+        assert!(sc.get("sessions").is_some(), "status shape: {sc}");
+        assert_eq!(sc["mode"], json!("fts-only"));
+        if sc["building"].is_null() && sc["sessions"].as_i64().unwrap_or(0) >= 14 {
+            built = Some(r);
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    let st = built.expect("index_status eventually reports a built index");
     let sc = &st["structuredContent"];
-    assert!(sc["sessions"].as_i64().unwrap() >= 14, "sessions: {sc}");
     assert!(sc["chunks"].as_i64().unwrap() > 0, "chunks: {sc}");
-    assert_eq!(sc["mode"], json!("fts-only"));
     assert!(st["content"][0]["text"]
         .as_str()
         .unwrap()
