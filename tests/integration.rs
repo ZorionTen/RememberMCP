@@ -182,7 +182,7 @@ fn editing_a_session_updates_only_that_session() {
 
     // append a message to one session and bump its time_updated
     {
-        let conn = rusqlite::Connection::open(&f.db()).unwrap();
+        let conn = rusqlite::Connection::open(f.db()).unwrap();
         conn.busy_timeout(std::time::Duration::from_millis(5000))
             .unwrap();
         conn.execute(
@@ -405,4 +405,22 @@ fn chunk_map(f: &Fixture) -> std::collections::BTreeMap<String, Vec<i64>> {
         map.entry(sid).or_default().push(id);
     }
     map
+}
+
+#[test]
+fn full_reindex_rebuilds_everything() {
+    let f = fx();
+    let emb = FakeEmbedder::new(64);
+    let first = sync_fixture(&f, Some(&emb), false);
+    assert!(first.sessions_indexed > 0);
+
+    let rebuild = sync_fixture(&f, Some(&emb), true);
+    assert_eq!(
+        rebuild.sessions_indexed, first.sessions_indexed,
+        "full rebuild reindexes every session"
+    );
+    assert!(rebuild.chunks_written > 0);
+    // results identical after a full rebuild
+    let hits = do_search(&f, "docker permission denied", Some(&emb));
+    assert_eq!(hits.hits[0].session_id, "ses_docker_fix");
 }

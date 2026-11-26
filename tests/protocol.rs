@@ -88,14 +88,14 @@ impl Client {
         let id = self.next_id;
         self.next_id += 1;
         let msg = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
-        writeln!(self.stdin, "{}", msg.to_string()).expect("write stdin");
+        writeln!(self.stdin, "{}", msg).expect("write stdin");
         self.stdin.flush().ok();
         id
     }
 
     fn notify(&mut self, method: &str, params: Value) {
         let msg = json!({"jsonrpc": "2.0", "method": method, "params": params});
-        writeln!(self.stdin, "{}", msg.to_string()).expect("write stdin");
+        writeln!(self.stdin, "{}", msg).expect("write stdin");
         self.stdin.flush().ok();
     }
 

@@ -34,7 +34,7 @@ impl Fixture {
 
 /// Build the whole fixture under a fresh temp dir.
 pub fn build() -> Fixture {
-    let dir = tempfile::tempdir().expect("tempdir").into_path();
+    let dir = tempfile::tempdir().expect("tempdir").keep();
     let db_path = dir.join("opencode.db");
     let conn = Connection::open(&db_path).expect("create db");
     conn.pragma_update(None, "journal_mode", "WAL").unwrap();
@@ -329,7 +329,7 @@ fn seed(conn: &Connection) {
     for (sid, title, dir, msgs) in &v1 {
         let created = next_ts();
         let updated = next_ts();
-        let archived = (*sid == "ses_archived").then(|| next_ts());
+        let archived = (*sid == "ses_archived").then(&mut next_ts);
         insert_session(conn, sid, title, dir, created, updated, archived);
         for m in msgs {
             let ts = next_ts();
