@@ -149,7 +149,7 @@ All tools are read-only (`readOnlyHint: true`), return plain text **plus** `stru
 | `EMBED_MODEL` | `BAAI/bge-small-en-v1.5` | Embedding model (`bge-small-en-v1.5` aliases supported; `none` = FTS-only) |
 | `SYNC_TTL_SECONDS` | `30` | Lazy re-sync window before a search |
 | `INCLUDE_REASONING` | `0` | Include reasoning parts in chunks |
-| `EMBED_MAX_LEN` | `256` | Token window per embedding (64–512); lower = faster cold index, higher = better tail recall. Changing it rebuilds vectors |
+| `EMBED_MAX_LEN` | `192` | Token window per embedding (64–512); lower = faster cold index (192 ≈ under 5 min cold), higher = better tail recall. Changing it rebuilds vectors |
 | `EXTRA_REDACT_REGEX` | empty | Extra redaction patterns, one per line |
 | `LOG_LEVEL` | `INFO` | Log level — **always logged to stderr** (stdout is the MCP protocol) |
 | `FASTEMBED_CACHE_DIR` | `~/.cache/remember-mcp/fastembed` | Model cache (set automatically if unset) |
@@ -173,7 +173,7 @@ All tools are read-only (`readOnlyHint: true`), return plain text **plus** `stru
 ## Development
 
 ```bash
-cargo test           # 40 tests: unit, integration, golden recall@5, concurrency, MCP protocol
+cargo test           # offline suite: unit, integration, golden recall@5, concurrency, MCP protocol
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```

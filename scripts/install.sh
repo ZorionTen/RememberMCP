@@ -21,8 +21,6 @@ for arg in "$@"; do
   esac
 done
 
-if [ "${CONFIG_HINT:-0}" = "1" ] || [ "${CONFIG_HINT:-}" = "1" ]; then :; fi
-
 print_config() {
   local path="$1"
   cat <<EOF
@@ -44,6 +42,11 @@ OpenCode spawns the server as a child process: it starts when OpenCode starts
 and exits when OpenCode exits. No daemon to manage.
 EOF
 }
+
+if [ "${CONFIG_HINT:-0}" = "1" ]; then
+  print_config "$INSTALL_DIR/$BIN_NAME"
+  exit 0
+fi
 
 if [ "${CHECK_ONLY:-0}" = "1" ]; then
   TARGET="$INSTALL_DIR/$BIN_NAME"
