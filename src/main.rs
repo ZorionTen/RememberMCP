@@ -13,6 +13,9 @@ use remember_mcp::server::{spawn_initial_sync, AppState, RememberServer};
 use rmcp::ServiceExt;
 
 fn main() -> anyhow::Result<()> {
+    // before any threads: pin the model cache dir (env::set_var is unsafe
+    // once other threads may read the environment)
+    remember_mcp::embed::pin_model_cache();
     env_logger::Builder::from_env(env_logger::Env::default().filter_or("LOG_LEVEL", "INFO"))
         .target(env_logger::Target::Stderr)
         .init();

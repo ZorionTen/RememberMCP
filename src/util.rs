@@ -94,20 +94,34 @@ pub fn datetime_str(ms: i64) -> String {
 
 /// Parse an ISO date (`YYYY-MM-DD`) or RFC3339 timestamp to epoch ms.
 /// Date-only `since` → start of day; date-only `until` → end of day (inclusive).
-pub fn parse_iso(s: &str) -> Option<(i64, bool)> {
+/// Parse a lower bound: RFC3339 as-is; date-only → start of that day in the
+/// LOCAL timezone (matching how `date_str` renders timestamps).
+pub fn parse_since(s: &str) -> Option<i64> {
     let s = s.trim();
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-        return Some((dt.timestamp_millis(), false));
+        return Some(dt.timestamp_millis());
     }
-    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        let start = d
-            .and_hms_opt(0, 0, 0)
-            .map(|dt| dt.and_utc().timestamp() * 1000)
-            .unwrap_or(0);
-        // date-only: treat `until` as inclusive end of day
-        return Some((start, true));
+    let d = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()?;
+    let ndt = d.and_hms_opt(0, 0, 0)?;
+    chrono::Local
+        .from_local_datetime(&ndt)
+        .earliest()
+        .map(|dt| dt.timestamp_millis())
+}
+
+/// Parse an upper bound (inclusive): RFC3339 as-is; date-only → the last
+/// millisecond of that LOCAL day.
+pub fn parse_until(s: &str) -> Option<i64> {
+    let s = s.trim();
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Some(dt.timestamp_millis());
     }
-    None
+    let d = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()?;
+    let ndt = d.succ_opt()?.and_hms_opt(0, 0, 0)?;
+    chrono::Local
+        .from_local_datetime(&ndt)
+        .earliest()
+        .map(|dt| dt.timestamp_millis() - 1)
 }
 
 #[cfg(test)]
@@ -135,10 +149,13 @@ mod tests {
 
     #[test]
     fn iso_parsing() {
-        let (ms, date_only) = parse_iso("2026-05-17").unwrap();
-        assert!(date_only);
-        assert!(ms > 0);
-        assert!(parse_iso("2026-05-17T12:00:00Z").is_some());
-        assert!(parse_iso("not-a-date").is_none());
+        let since = parse_since("2026-05-17").unwrap();
+        let until = parse_until("2026-05-17").unwrap();
+        assert!(until > since);
+        // date-only bounds cover the whole local day
+        assert_eq!(until - since, 86_400_000 - 1);
+        assert!(parse_since("2026-05-17T12:00:00Z").is_some());
+        assert!(parse_since("not-a-date").is_none());
+        assert!(parse_until("not-a-date").is_none());
     }
 }

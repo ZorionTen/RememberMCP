@@ -46,7 +46,7 @@ impl Config {
             .ok()
             .and_then(|v| v.parse().ok())
             .filter(|v| (64..=512).contains(v))
-            .unwrap_or(256);
+            .unwrap_or(192);
         let include_reasoning = matches!(
             std::env::var("INCLUDE_REASONING").as_deref(),
             Ok("1") | Ok("true") | Ok("yes")

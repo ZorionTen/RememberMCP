@@ -120,8 +120,15 @@ pub struct SyncOptions<'a> {
 
 pub struct Index {
     path: PathBuf,
-    /// Cross-process single-writer lock (held only during sync).
-    lock: Option<std::fs::File>,
+}
+
+/// Holds the cross-process sync lock; unlocks on drop even during unwinding.
+struct SyncLock(std::fs::File);
+
+impl Drop for SyncLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
 }
 
 impl Index {
@@ -156,7 +163,6 @@ impl Index {
         }
         Ok(Self {
             path: path.to_path_buf(),
-            lock: None,
         })
     }
 
@@ -303,20 +309,17 @@ impl Index {
     /// `index.db`; returns `Busy` if another instance is syncing.
     pub fn sync(&mut self, opts: &SyncOptions<'_>) -> Result<SyncOutcome, IndexError> {
         let lock_path = self.path.with_extension("db.lock");
-        let lock = std::fs::File::create(&lock_path)?;
-        if let Err(e) = lock.try_lock() {
+        let file = std::fs::File::create(&lock_path)?;
+        if let Err(e) = file.try_lock() {
             log::debug!("sync lock busy: {e}");
             return Ok(SyncOutcome::Busy);
         }
-        self.lock = Some(lock);
+        let _guard = SyncLock(file); // released on drop, incl. panics
 
         let started = Instant::now();
         opts.progress.building.store(true, Ordering::Relaxed);
         let result = self.sync_inner(opts, started);
 
-        if let Some(l) = self.lock.take() {
-            let _ = l.unlock();
-        }
         opts.progress.building.store(false, Ordering::Relaxed);
         result
     }
@@ -521,6 +524,8 @@ impl Index {
                     }
                 }
             }
+            let safe_title = opts.redactor.redact(&meta.title);
+            let safe_project = opts.redactor.redact(&meta.project_dir);
             tx.execute(
                 "INSERT INTO sessions_idx(session_id, project_dir, title, source,
                                           time_created, time_updated, archived, message_count)
@@ -532,8 +537,8 @@ impl Index {
                    message_count=excluded.message_count",
                 params![
                     meta.id,
-                    meta.project_dir,
-                    meta.title,
+                    safe_project,
+                    safe_title,
                     meta.source,
                     meta.time_created,
                     meta.time_updated,

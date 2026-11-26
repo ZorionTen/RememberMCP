@@ -162,13 +162,7 @@ pub fn search(params: &SearchParams, ctx: &SearchContext<'_>) -> Result<SearchOu
     }
 
     // ---- RRF merge --------------------------------------------------------
-    let mut scores: HashMap<i64, f64> = HashMap::new();
-    for (rank, id) in fts_rank.iter().enumerate() {
-        *scores.entry(*id).or_default() += 1.0 / (RRF_K + (rank + 1) as f64);
-    }
-    for (rank, id) in vec_rank.iter().enumerate() {
-        *scores.entry(*id).or_default() += 1.0 / (RRF_K + (rank + 1) as f64);
-    }
+    let scores = rrf_merge(&fts_rank, &vec_rank);
     if scores.is_empty() {
         return Ok(SearchOutcome {
             hits: vec![],
@@ -293,6 +287,19 @@ pub fn search(params: &SearchParams, ctx: &SearchContext<'_>) -> Result<SearchOu
     })
 }
 
+/// Reciprocal Rank Fusion (spec §9.3): `score = Σ 1/(60 + rank)` over both
+/// ranked lists (ranks are 1-based).
+pub fn rrf_merge(fts: &[i64], vec: &[i64]) -> HashMap<i64, f64> {
+    let mut scores: HashMap<i64, f64> = HashMap::new();
+    for (rank, id) in fts.iter().enumerate() {
+        *scores.entry(*id).or_default() += 1.0 / (RRF_K + (rank + 1) as f64);
+    }
+    for (rank, id) in vec.iter().enumerate() {
+        *scores.entry(*id).or_default() += 1.0 / (RRF_K + (rank + 1) as f64);
+    }
+    scores
+}
+
 /// SQL filter conditions with placeholders numbered from `?2` (`?1` is the
 /// MATCH/vector anchor in both leg queries).
 fn build_filters(p: &SearchParams) -> (String, Vec<rusqlite::types::Value>) {
@@ -403,6 +410,23 @@ fn find_ci(hay: &str, needle: &str) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rrf_fuses_both_legs() {
+        // present in both lists ranks above single-list hits
+        let scores = rrf_merge(&[1, 2, 3], &[3, 1]);
+        let s = |id: i64| scores[&id];
+        assert!(
+            s(3) > s(2),
+            "both-leg hit must outrank fts-only hit: {scores:?}"
+        );
+        assert!(s(1) > s(2), "high dual rank must outrank low single rank");
+        // exact formula check for a single-list hit
+        assert!((s(2) - 1.0 / 62.0).abs() < 1e-12);
+        assert!((s(3) - (1.0 / 63.0 + 1.0 / 61.0)).abs() < 1e-12);
+        // empty legs -> empty scores
+        assert!(rrf_merge(&[], &[]).is_empty());
+    }
 
     #[test]
     fn terms_split_and_escape() {

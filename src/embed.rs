@@ -48,6 +48,19 @@ pub fn map_model(name: &str) -> Option<EmbeddingModel> {
 
 /// Create the production embedder. `Ok(None)` means embeddings disabled or
 /// unavailable (FTS-only degraded mode).
+/// Pin fastembed's model cache to a stable, CWD-independent location.
+/// Call once at process start, BEFORE any threads are spawned (env::set_var
+/// is not thread-safe).
+pub fn pin_model_cache() {
+    if std::env::var_os("FASTEMBED_CACHE_DIR").is_none() {
+        if let Some(base) = dirs::cache_dir() {
+            let dir = base.join("remember-mcp").join("fastembed");
+            let _ = std::fs::create_dir_all(&dir);
+            std::env::set_var("FASTEMBED_CACHE_DIR", &dir);
+        }
+    }
+}
+
 pub fn create_embedder(model_cfg: &str, max_len: usize) -> Option<Box<dyn Embedder>> {
     let lower = model_cfg.trim().to_ascii_lowercase();
     if matches!(lower.as_str(), "none" | "off" | "false" | "fts-only") {
@@ -60,15 +73,6 @@ pub fn create_embedder(model_cfg: &str, max_len: usize) -> Option<Box<dyn Embedd
             return None;
         }
     };
-    // fastembed defaults to a CWD-relative cache; pin it to a stable location
-    // so the model is downloaded once regardless of the client's working dir.
-    if std::env::var_os("FASTEMBED_CACHE_DIR").is_none() {
-        if let Some(base) = dirs::cache_dir() {
-            let dir = base.join("remember-mcp").join("fastembed");
-            let _ = std::fs::create_dir_all(&dir);
-            std::env::set_var("FASTEMBED_CACHE_DIR", &dir);
-        }
-    }
     match OnnxEmbedder::new(model, max_len) {
         Ok(e) => Some(Box::new(e)),
         Err(e) => {
