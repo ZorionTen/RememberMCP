@@ -1,0 +1,9 @@
+/target
+index.db
+index.db-wal
+index.db-shm
+index.db.lock
+*.db
+*.db-wal
+*.db-shm
+.env

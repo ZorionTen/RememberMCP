@@ -1,0 +1,47 @@
+[package]
+name = "remember-mcp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+description = "MCP server for semantic search over your local OpenCode chat history — read-only RAG with hybrid search (FTS5 + vector), runs as a child process of OpenCode"
+repository = "https://github.com/ZorionTen/RememberMCP"
+readme = "README.md"
+keywords = ["mcp", "rag", "opencode", "semantic-search", "sqlite"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "remember-mcp"
+path = "src/main.rs"
+
+[lib]
+name = "remember_mcp"
+path = "src/lib.rs"
+
+[dependencies]
+rmcp = { version = "3.11", features = ["transport-io"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
+sqlite-vec = "0.1.9"
+fastembed = { version = "=4.9.1", default-features = false, features = [
+    "ort-download-binaries",
+    "hf-hub-rustls-tls",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+sha2 = "0.10"
+anyhow = "1"
+thiserror = "2"
+schemars = { version = "1", features = ["derive"] }
+log = "0.4"
+env_logger = "0.11"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+dirs = "6"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+strip = true
